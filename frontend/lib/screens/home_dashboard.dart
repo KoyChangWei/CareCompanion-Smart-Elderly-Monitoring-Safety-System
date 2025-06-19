@@ -310,6 +310,8 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
                         const SizedBox(height: 24),
                         _buildQuickRelayControl(sensorService),
                         const SizedBox(height: 24),
+                        _buildFallRiskDetailsCard(sensorService),
+                        const SizedBox(height: 24),
                         _buildQuickStatsRow(sensorService),
                         const SizedBox(height: 24),
                         _buildSensorGrid(context, sensorService),
@@ -881,76 +883,275 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
     );
   }
 
+  Widget _buildFallRiskDetailsCard(SensorService sensorService) {
+    final riskLevel = sensorService.fallRiskLevel;
+    final riskColor = sensorService.getFallRiskColor();
+    final riskIcon = sensorService.getFallRiskIcon();
+    final riskDescription = sensorService.getFallRiskDescription();
+    final isHighRisk = riskLevel == 'HIGH_RISK' || riskLevel == 'CRITICAL';
+    final isActive = sensorService.motionDetected;
+    final duration = sensorService.motionDuration;
+    
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isHighRisk ? riskColor.withOpacity(0.3) : Colors.grey.withOpacity(0.2),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              AnimatedBuilder(
+                animation: _pulseAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: isHighRisk ? _pulseAnimation.value : 1.0,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: riskColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        riskIcon,
+                        color: riskColor,
+                        size: 28,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Fall Risk Assessment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                    Text(
+                      'Real-time mobility monitoring for elderly safety',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // Risk Level Display
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: riskColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: riskColor.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Current Risk Level: ',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    Text(
+                      riskLevel.replaceAll('_', ' '),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: riskColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  riskDescription,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Motion Information
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isActive ? Colors.green[50] : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isActive ? Colors.green[200]! : Colors.grey[200]!,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        isActive ? FontAwesomeIcons.personWalking : FontAwesomeIcons.personWalkingWithCane,
+                        color: isActive ? Colors.green[600] : Colors.grey[600],
+                        size: 20,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Motion Status',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      Text(
+                        isActive ? 'Active' : 'Inactive',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isActive ? Colors.green[600] : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: duration > 0 ? Colors.blue[50] : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: duration > 0 ? Colors.blue[200]! : Colors.grey[200]!,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        FontAwesomeIcons.clock,
+                        color: duration > 0 ? Colors.blue[600] : Colors.grey[600],
+                        size: 20,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Duration',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      Text(
+                        duration > 0 ? '${duration}s' : 'N/A',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: duration > 0 ? Colors.blue[600] : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          // High Risk Warning
+          if (isHighRisk) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    FontAwesomeIcons.triangleExclamation,
+                    color: Colors.red[600],
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      riskLevel == 'CRITICAL' 
+                        ? 'CRITICAL: Elderly person may need immediate assistance. Please check on them now!'
+                        : 'HIGH RISK: Unusual movement patterns detected. Consider checking on the elderly person.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red[700],
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildQuickStatsRow(SensorService sensorService) {
     return Row(
       children: [
         Expanded(
-          child: _buildQuickStatCard(
-            'Temperature',
-            '${sensorService.temperature.toStringAsFixed(1)}°C',
-            Icons.thermostat_rounded,
-            _getTemperatureColor(sensorService.temperature),
-          ),
+          child: _buildTemperatureIndicator(sensorService),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _buildQuickStatCard(
-            'Humidity',
-            '${sensorService.humidity.toStringAsFixed(1)}%',
-            Icons.water_drop_rounded,
-            _getHumidityColor(sensorService.humidity),
-          ),
+          child: _buildHumidityIndicator(sensorService),
         ),
       ],
     );
   }
 
-  Widget _buildQuickStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildSensorGrid(BuildContext context, SensorService sensorService) {
     return Column(
@@ -981,7 +1182,7 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
                 ? [Colors.red[50]!, Colors.red[100]!]
                 : [Colors.green[50]!, Colors.green[100]!],
             ),
-            _buildMotionSensorCard(sensorService),
+            _buildFallRiskCard(sensorService),
             _buildModernSensorCard(
               title: 'Emergency Relay',
               value: sensorService.relayStatus ? 'ACTIVE' : 'Standby',
@@ -1006,35 +1207,36 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
     );
   }
 
-  Widget _buildMotionSensorCard(SensorService sensorService) {
+  Widget _buildFallRiskCard(SensorService sensorService) {
+    final riskLevel = sensorService.fallRiskLevel;
+    final riskColor = sensorService.getFallRiskColor();
+    final riskIcon = sensorService.getFallRiskIcon();
+    final riskDescription = sensorService.getFallRiskDescription();
+    final isHighRisk = riskLevel == 'HIGH_RISK' || riskLevel == 'CRITICAL';
     final isActive = sensorService.motionDetected;
-    final duration = sensorService.latestMotionDuration;
+    final duration = sensorService.motionDuration;
     
-    String displayValue;
+    String motionInfo;
     if (isActive) {
-      displayValue = 'Active';
+      motionInfo = 'Active Motion';
     } else if (duration > 0) {
-      final minutes = duration ~/ 60;
-      final seconds = duration % 60;
-      if (minutes > 0) {
-        displayValue = 'Last: ${minutes}m ${seconds}s';
-      } else {
-        displayValue = 'Last: ${seconds}s';
-      }
+      motionInfo = 'Last: ${duration}s';
     } else {
-      displayValue = 'Inactive';
+      motionInfo = 'No Motion';
     }
     
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: isActive 
-            ? [Colors.orange[50]!, Colors.orange[100]!]
-            : [Colors.grey[50]!, Colors.grey[100]!],
+          colors: [
+            riskColor.withOpacity(0.1),
+            riskColor.withOpacity(0.2),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
+        border: isHighRisk ? Border.all(color: riskColor, width: 2) : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -1048,27 +1250,36 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isActive ? Colors.orange : Colors.grey,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: (isActive ? Colors.orange : Colors.grey).withOpacity(0.3),
-                    blurRadius: 8,
+            AnimatedBuilder(
+              animation: _pulseAnimation,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: isHighRisk ? _pulseAnimation.value : 1.0,
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: riskColor,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: riskColor.withOpacity(0.3),
+                          blurRadius: 8,
+                          spreadRadius: isHighRisk ? 2 : 0,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      riskIcon,
+                      size: 24,
+                      color: Colors.white,
+                    ),
                   ),
-                ],
-              ),
-              child: Icon(
-                FontAwesomeIcons.personWalking,
-                size: 24,
-                color: Colors.white,
-              ),
+                );
+              },
             ),
             const SizedBox(height: 8),
             const Text(
-              'Motion Status',
+              'Fall Risk',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -1079,19 +1290,30 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
-            Flexible(
-              child: Text(
-                displayValue,
-                style: TextStyle(
-                  fontSize: displayValue.length > 10 ? 12 : 14,
-                  fontWeight: FontWeight.bold,
-                  color: isActive ? Colors.orange : Colors.grey,
-                  height: 1.1,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+            Text(
+              riskLevel.replaceAll('_', ' '),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: riskColor,
+                height: 1.1,
               ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              motionInfo,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+                height: 1.1,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -1331,6 +1553,202 @@ class _HomeDashboardState extends State<HomeDashboard> with TickerProviderStateM
         ),
       ),
     );
+  }
+
+  Widget _buildTemperatureIndicator(SensorService sensorService) {
+    final temp = sensorService.temperature;
+    final minTemp = 0.0;
+    final maxTemp = 50.0;
+    final normalizedTemp = ((temp - minTemp) / (maxTemp - minTemp)).clamp(0.0, 1.0);
+    final color = _getTemperatureColor(temp);
+    
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Temperature',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Icon(Icons.thermostat_rounded, color: color, size: 20),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 80,
+                height: 80,
+                child: CircularProgressIndicator(
+                  value: normalizedTemp,
+                  strokeWidth: 8,
+                  backgroundColor: color.withOpacity(0.1),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${temp.toStringAsFixed(1)}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    '°C',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _getTemperatureStatus(temp),
+              style: TextStyle(
+                fontSize: 11,
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHumidityIndicator(SensorService sensorService) {
+    final humidity = sensorService.humidity;
+    final normalizedHumidity = (humidity / 100.0).clamp(0.0, 1.0);
+    final color = _getHumidityColor(humidity);
+    
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Humidity',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Icon(Icons.water_drop_rounded, color: color, size: 20),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 80,
+                height: 80,
+                child: CircularProgressIndicator(
+                  value: normalizedHumidity,
+                  strokeWidth: 8,
+                  backgroundColor: color.withOpacity(0.1),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${humidity.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    '%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _getHumidityStatus(humidity),
+              style: TextStyle(
+                fontSize: 11,
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getTemperatureStatus(double temperature) {
+    if (temperature > 28) return 'TOO HOT';
+    if (temperature < 18) return 'TOO COLD';
+    return 'OPTIMAL';
+  }
+
+  String _getHumidityStatus(double humidity) {
+    if (humidity > 70) return 'TOO HIGH';
+    if (humidity < 30) return 'TOO LOW';
+    return 'OPTIMAL';
   }
 
   Color _getTemperatureColor(double temperature) {

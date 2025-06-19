@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'register_page.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'myconfig.dart';
+import '../config/app_config.dart';
 import 'dart:math' as math;
 import 'package:shared_preferences/shared_preferences.dart';
 

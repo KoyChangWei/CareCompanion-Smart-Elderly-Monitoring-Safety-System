@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 
@@ -17,6 +18,14 @@ class SensorService extends ChangeNotifier {
   DateTime _lastUpdate = DateTime.now();
   String _vibrationStatus = 'NO_VIBRATION';
   String _pirStatus = 'NO_MOTION';
+  
+  // Fall risk assessment data
+  String _fallRiskLevel = 'SAFE';
+  int _motionDuration = 0;
+  int _motionBursts = 0;
+  int _unsteadyMotions = 0;
+  int _transferMotions = 0;
+  int _steadyMotions = 0;
   
   // Fall detection state management
   bool _pendingFallReset = false;
@@ -59,6 +68,14 @@ class SensorService extends ChangeNotifier {
   DateTime get lastUpdate => _lastUpdate;
   String get vibrationStatus => _vibrationStatus;
   String get pirStatus => _pirStatus;
+  
+  // Fall risk assessment getters
+  String get fallRiskLevel => _fallRiskLevel;
+  int get motionDuration => _motionDuration;
+  int get motionBursts => _motionBursts;
+  int get unsteadyMotions => _unsteadyMotions;
+  int get transferMotions => _transferMotions;
+  int get steadyMotions => _steadyMotions;
   List<TemperatureReading> get temperatureHistory => _temperatureHistory;
   List<HumidityReading> get humidityHistory => _humidityHistory;
   List<ActivityReading> get activityHistory => _activityHistory;
@@ -180,10 +197,36 @@ class SensorService extends ChangeNotifier {
           _pirStatus = data['status']?.toString() ?? 'NO_MOTION';
           _motionDetected = _pirStatus == 'DETECTED';
           
+          // Extract motion duration and fall risk information (now decoded by backend)
+          if (data.containsKey('duration')) {
+            _motionDuration = int.tryParse(data['duration']?.toString() ?? '0') ?? 0;
+          }
+          
+          // Get fall risk level from backend (already decoded)
+          if (data.containsKey('fall_risk_level')) {
+            _fallRiskLevel = data['fall_risk_level']?.toString() ?? 'NORMAL';
+          } else {
+            // Fallback to old decoding method if backend doesn't provide fall_risk_level
+            final rawDuration = int.tryParse(data['raw_duration']?.toString() ?? data['duration']?.toString() ?? '0') ?? 0;
+            if (rawDuration >= 5000) {
+              _fallRiskLevel = 'CRITICAL';
+            } else if (rawDuration >= 4000) {
+              _fallRiskLevel = 'HIGH_RISK';
+            } else if (rawDuration >= 3000) {
+              _fallRiskLevel = 'MODERATE_RISK';
+            } else if (rawDuration >= 2000) {
+              _fallRiskLevel = 'LOW_RISK';
+            } else if (rawDuration >= 1000) {
+              _fallRiskLevel = 'SAFE';
+            } else {
+              _fallRiskLevel = 'NORMAL';
+            }
+          }
+          
           // Only add to history if ESP is connected (we got real sensor data)
           if (_isConnected) {
             if (kDebugMode) {
-              print('PIR Parsed: Status=$_pirStatus, Detected=$_motionDetected');
+              print('PIR Parsed: Status=$_pirStatus, Detected=$_motionDetected, Duration=$_motionDuration, FallRisk=$_fallRiskLevel');
             }
             
             // Note: Activity history comes from database via loadHistoricalData(), not added here
@@ -393,10 +436,12 @@ class SensorService extends ChangeNotifier {
   }
   
   // Load historical data from backend
-  Future<void> loadHistoricalData({int days = 7}) async {
+  Future<void> loadHistoricalData({int days = 7, bool silent = false}) async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      if (!silent) {
+        _isLoading = true;
+        notifyListeners();
+      }
       
       // Load DHT history and activity history in parallel
       await Future.wait([
@@ -404,13 +449,17 @@ class SensorService extends ChangeNotifier {
         loadActivityHistory(days: days),
       ]);
       
-      _isLoading = false;
+      if (!silent) {
+        _isLoading = false;
+      }
       notifyListeners();
     } catch (e) {
-      _isLoading = false;
-      _errorMessage = 'Error loading historical data: $e';
-      if (kDebugMode) {
-        print('Error loading historical data: $e');
+      if (!silent) {
+        _isLoading = false;
+        _errorMessage = 'Error loading historical data: $e';
+        if (kDebugMode) {
+          print('Error loading historical data: $e');
+        }
       }
       notifyListeners();
     }
@@ -472,12 +521,14 @@ class SensorService extends ChangeNotifier {
             final type = item['type']?.toString() ?? 'UNKNOWN';
             final detected = item['detected'] == true;
             final duration = int.tryParse(item['duration']?.toString() ?? '0') ?? 0;
+            final fallRiskLevel = item['fall_risk_level']?.toString() ?? 'NORMAL';
             
             _activityHistory.add(ActivityReading(
               timestamp: timestamp,
               type: type,
               detected: detected,
               duration: duration,
+              fallRiskLevel: fallRiskLevel,
             ));
           }
         }
@@ -524,6 +575,58 @@ class SensorService extends ChangeNotifier {
     };
   }
   
+  // Helper methods for fall risk assessment
+  String getFallRiskDescription() {
+    switch (_fallRiskLevel) {
+      case 'CRITICAL':
+        return 'Emergency - May need immediate assistance';
+      case 'HIGH_RISK':
+        return 'High fall risk - Monitor closely';
+      case 'MODERATE_RISK':
+        return 'Moderate fall risk - Stay alert';
+      case 'LOW_RISK':
+        return 'Low fall risk - Normal activity';
+      case 'SAFE':
+        return 'Safe movement - Good mobility';
+      default:
+        return 'No assessment available';
+    }
+  }
+  
+  Color getFallRiskColor() {
+    switch (_fallRiskLevel) {
+      case 'CRITICAL':
+        return const Color(0xFFD32F2F); // Red 700
+      case 'HIGH_RISK':
+        return const Color(0xFFE53935); // Red 600
+      case 'MODERATE_RISK':
+        return const Color(0xFFFF9800); // Orange 500
+      case 'LOW_RISK':
+        return const Color(0xFFFFC107); // Amber 500
+      case 'SAFE':
+        return const Color(0xFF4CAF50); // Green 500
+      default:
+        return const Color(0xFF9E9E9E); // Grey 500
+    }
+  }
+  
+  IconData getFallRiskIcon() {
+    switch (_fallRiskLevel) {
+      case 'CRITICAL':
+        return Icons.emergency;
+      case 'HIGH_RISK':
+        return Icons.warning;
+      case 'MODERATE_RISK':
+        return Icons.info_outline;
+      case 'LOW_RISK':
+        return Icons.check_circle_outline;
+      case 'SAFE':
+        return Icons.verified_user;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
   @override
   void dispose() {
     stopMonitoring();
@@ -551,11 +654,13 @@ class ActivityReading {
   final String type; // 'MOTION' or 'FALL'
   final bool detected;
   final int duration; // Duration in seconds (for motion events)
+  final String fallRiskLevel; // Fall risk level for motion events
   
   ActivityReading({
     required this.timestamp,
     required this.type,
     required this.detected,
     this.duration = 0,
+    this.fallRiskLevel = 'NORMAL',
   });
 } 

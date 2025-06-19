@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'dart:async';
 import '../services/sensor_service.dart';
 import '../config/app_config.dart';
 import '../widgets/image_background_widget.dart';
@@ -63,6 +64,12 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  
+  // Auto-refresh functionality
+  Timer? _refreshTimer;
+  bool _isAutoRefreshEnabled = true;
+  DateTime? _lastRefreshTime;
+  bool _isBackgroundRefresh = false;
 
   @override
   void initState() {
@@ -92,6 +99,7 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
     // Load initial data for Last 7 Days
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadDataForSelectedRange();
+      _startAutoRefresh();
     });
   }
 
@@ -99,6 +107,7 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -125,7 +134,7 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
                         children: [
                           _buildDateRangeSelector(),
                           const SizedBox(height: 24),
-                          if (sensorService.isLoading)
+                          if (sensorService.isLoading && !_isBackgroundRefresh)
                             _buildLoadingCard()
                           else ...[
                             _buildSummaryCards(sensorService),
@@ -187,13 +196,25 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
         ),
       ),
       actions: [
+        // Auto-refresh toggle button
+        IconButton(
+          icon: Icon(
+            _isAutoRefreshEnabled ? Icons.pause_circle_outline : Icons.play_circle_outline,
+            color: _isAutoRefreshEnabled ? Colors.green : Colors.white,
+          ),
+          onPressed: _toggleAutoRefresh,
+          tooltip: _isAutoRefreshEnabled ? 'Pause auto-refresh' : 'Start auto-refresh',
+        ),
+        
+        // Manual refresh button
         IconButton(
           icon: const Icon(Icons.refresh_rounded),
           onPressed: () {
-            _loadDataForSelectedRange();
+            _manualRefreshData();
             _fadeController.reset();
             _fadeController.forward();
           },
+          tooltip: 'Manual refresh',
         ),
       ],
     );
@@ -269,14 +290,70 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
                 ),
               ),
               const SizedBox(width: 16),
-              const Text(
-                'Select Time Range',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Select Time Range',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    if (_lastRefreshTime != null)
+                      Text(
+                        'Updated: ${DateFormat('HH:mm:ss').format(_lastRefreshTime!)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                  ],
                 ),
               ),
+              // Live indicator with refresh animation
+              if (_isAutoRefreshEnabled)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _isBackgroundRefresh 
+                        ? Colors.orange.withOpacity(0.15)
+                        : Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isBackgroundRefresh 
+                          ? Colors.orange.withOpacity(0.4)
+                          : Colors.green.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: _isBackgroundRefresh ? Colors.orange : Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 300),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: _isBackgroundRefresh ? Colors.orange : Colors.green,
+                        ),
+                        child: Text(_isBackgroundRefresh ? 'SYNC' : 'LIVE'),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 20),
@@ -296,7 +373,13 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
                         setState(() {
                           _selectedDateRange = index;
                         });
-                        _loadDataForSelectedRange();
+                        _loadDataForSelectedRangeSilent();
+                        
+                        // Restart auto-refresh for new time range
+                        if (_isAutoRefreshEnabled) {
+                          _startAutoRefresh();
+                        }
+                        
                         // Add a small animation feedback
                         _fadeController.reset();
                         _fadeController.forward();
@@ -525,13 +608,44 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Chart View',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Chart View',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+              if (_isAutoRefreshEnabled && _selectedDateRange == 0)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _isBackgroundRefresh 
+                        ? Colors.orange.withOpacity(0.15)
+                        : Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isBackgroundRefresh 
+                          ? Colors.orange.withOpacity(0.4)
+                          : Colors.green.withOpacity(0.3),
+                    ),
+                  ),
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 300),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: _isBackgroundRefresh ? Colors.orange : Colors.green,
+                    ),
+                    child: Text(_isBackgroundRefresh ? 'Syncing...' : 'Real-time'),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           Row(
@@ -729,6 +843,147 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
     );
   }
 
+  // Auto-refresh methods
+  void _startAutoRefresh() {
+    if (!_isAutoRefreshEnabled) return;
+    
+    _refreshTimer?.cancel(); // Cancel any existing timer
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted && _isAutoRefreshEnabled) {
+        _refreshSensorData();
+      }
+    });
+    
+    if (kDebugMode) {
+      print('📊 Auto-refresh started: updating every 5 seconds');
+    }
+  }
+
+  void _stopAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    
+    if (kDebugMode) {
+      print('📊 Auto-refresh stopped');
+    }
+  }
+
+  void _refreshSensorData() async {
+    final sensorService = Provider.of<SensorService>(context, listen: false);
+    
+    // Silent refresh - don't trigger loading state
+    await _silentDataRefresh(sensorService);
+    
+    // Update last refresh time
+    if (mounted) {
+      setState(() {
+        _lastRefreshTime = DateTime.now();
+      });
+    }
+    
+    if (kDebugMode) {
+      print('📊 Sensor data refreshed silently at ${DateFormat('HH:mm:ss').format(_lastRefreshTime!)}');
+    }
+  }
+
+  // Silent data refresh without loading indicators
+  Future<void> _silentDataRefresh(SensorService sensorService) async {
+    try {
+      // Set background refresh flag to prevent loading UI
+      setState(() {
+        _isBackgroundRefresh = true;
+      });
+      
+      // Update current sensor readings silently
+      await sensorService.fetchSensorData();
+      await sensorService.checkRelayStatus();
+      
+      // For "Today" view, also refresh historical data to get latest entries (silent mode)
+      if (_selectedDateRange == 0) {
+        await sensorService.loadHistoricalData(days: 1, silent: true);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('📊 Silent refresh error: $e');
+      }
+      // Don't show error to user during background refresh
+    } finally {
+      // Reset background refresh flag
+      if (mounted) {
+        setState(() {
+          _isBackgroundRefresh = false;
+        });
+      }
+    }
+  }
+
+  void _toggleAutoRefresh() {
+    setState(() {
+      _isAutoRefreshEnabled = !_isAutoRefreshEnabled;
+    });
+    
+    if (_isAutoRefreshEnabled) {
+      _startAutoRefresh();
+    } else {
+      _stopAutoRefresh();
+    }
+  }
+
+  // Manual refresh data without showing loading indicators
+  void _manualRefreshData() async {
+    final sensorService = Provider.of<SensorService>(context, listen: false);
+    
+    try {
+      // Set background refresh flag to prevent loading UI during manual refresh
+      setState(() {
+        _isBackgroundRefresh = true;
+      });
+      
+      int days = 1; // Today
+      
+      switch (_selectedDateRange) {
+        case 0: // Today
+          days = 1;
+          break;
+        case 1: // Last 7 days
+          days = 7;
+          break;
+        case 2: // Last 30 days
+          days = 30;
+          break;
+      }
+      
+      // Load data silently and refresh sensor data
+      await Future.wait([
+        sensorService.loadHistoricalData(days: days, silent: true),
+        sensorService.fetchSensorData(),
+        sensorService.checkRelayStatus(),
+      ]);
+      
+      // Update last refresh time
+      if (mounted) {
+        setState(() {
+          _lastRefreshTime = DateTime.now();
+        });
+      }
+      
+      if (kDebugMode) {
+        print('📊 Manual refresh completed at ${DateFormat('HH:mm:ss').format(_lastRefreshTime!)}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('📊 Manual refresh error: $e');
+      }
+    } finally {
+      // Reset background refresh flag
+      if (mounted) {
+        setState(() {
+          _isBackgroundRefresh = false;
+        });
+      }
+    }
+  }
+
   void _loadDataForSelectedRange() {
     final sensorService = Provider.of<SensorService>(context, listen: false);
     int days = 1; // Today
@@ -751,6 +1006,56 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
     
     // Load historical data from backend with the selected days
     sensorService.loadHistoricalData(days: days);
+  }
+
+  // Load data for selected range without showing loading indicators
+  void _loadDataForSelectedRangeSilent() async {
+    final sensorService = Provider.of<SensorService>(context, listen: false);
+    int days = 1; // Today
+    
+    switch (_selectedDateRange) {
+      case 0: // Today
+        days = 1;
+        break;
+      case 1: // Last 7 days
+        days = 7;
+        break;
+      case 2: // Last 30 days
+        days = 30;
+        break;
+    }
+    
+    try {
+      // Set background refresh flag to prevent loading UI
+      setState(() {
+        _isBackgroundRefresh = true;
+      });
+      
+      if (kDebugMode) {
+        print('📊 Loading analytics data silently for: ${_dateRangeLabels[_selectedDateRange]} ($days days)');
+      }
+      
+      // Load historical data silently
+      await sensorService.loadHistoricalData(days: days, silent: true);
+      
+      // Update last refresh time for the new range
+      if (mounted) {
+        setState(() {
+          _lastRefreshTime = DateTime.now();
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('📊 Silent range load error: $e');
+      }
+    } finally {
+      // Reset background refresh flag
+      if (mounted) {
+        setState(() {
+          _isBackgroundRefresh = false;
+        });
+      }
+    }
   }
 
   List<String> _generateInsights(SensorService sensorService) {
@@ -836,6 +1141,20 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
 
     if (insights.isEmpty) {
       insights.add('Insufficient data for generating insights. Please check sensor connections.');
+    }
+    
+    // Add auto-refresh information
+    if (_isAutoRefreshEnabled) {
+      if (_selectedDateRange == 0) {
+        insights.add('📡 Real-time monitoring active: Charts update silently every 5 seconds with fresh sensor data.');
+      } else {
+        insights.add('⏱️ Auto-refresh enabled: Current readings update silently every 5 seconds (historical data refreshes manually).');
+      }
+      if (_isBackgroundRefresh) {
+        insights.add('🔄 Currently syncing data in the background...');
+      }
+    } else {
+      insights.add('⏸️ Auto-refresh paused: Use the play button in the header to enable real-time updates.');
     }
 
     return insights;
@@ -1001,21 +1320,24 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
                   return FlSpot(entry.key.toDouble(), entry.value.value);
                 }).toList(),
                 isCurved: true,
-                curveSmoothness: 0.3,
+                curveSmoothness: 0.55, // Increased for smoother curves
+                preventCurveOverShooting: true, // Prevents curves from overshooting data points
+                preventCurveOvershootingThreshold: 5.0, // Controls overshoot prevention
                 gradient: const LinearGradient(
                   colors: [Color(0xFF8E24AA), Color(0xFF7B1FA2)],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
-                barWidth: 3.5,
+                barWidth: 4.0, // Slightly thicker line for better visibility
                 isStrokeCapRound: true,
+                isStrokeJoinRound: true, // Smooth line joins
                 dotData: FlDotData(
-                  show: true,
+                  show: data.length <= 20, // Only show dots when data points are fewer for cleaner look
                   getDotPainter: (spot, percent, barData, index) {
                     return FlDotCirclePainter(
-                      radius: 4,
+                      radius: 3.5, // Slightly smaller dots
                       color: Colors.white,
-                      strokeWidth: 2.5,
+                      strokeWidth: 2.0,
                       strokeColor: const Color(0xFF8E24AA),
                     );
                   },
@@ -1193,21 +1515,24 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
                   return FlSpot(entry.key.toDouble(), entry.value.value);
                 }).toList(),
                 isCurved: true,
-                curveSmoothness: 0.3,
+                curveSmoothness: 0.55, // Increased for smoother curves
+                preventCurveOverShooting: true, // Prevents curves from overshooting data points
+                preventCurveOvershootingThreshold: 10.0, // Controls overshoot prevention (higher for humidity)
                 gradient: const LinearGradient(
                   colors: [Color(0xFF1976D2), Color(0xFF1565C0)],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
-                barWidth: 3.5,
+                barWidth: 4.0, // Slightly thicker line for better visibility
                 isStrokeCapRound: true,
+                isStrokeJoinRound: true, // Smooth line joins
                 dotData: FlDotData(
-                  show: true,
+                  show: data.length <= 20, // Only show dots when data points are fewer for cleaner look
                   getDotPainter: (spot, percent, barData, index) {
                     return FlDotCirclePainter(
-                      radius: 4,
+                      radius: 3.5, // Slightly smaller dots
                       color: Colors.white,
-                      strokeWidth: 2.5,
+                      strokeWidth: 2.0,
                       strokeColor: const Color(0xFF1976D2),
                     );
                   },
@@ -2053,21 +2378,37 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
                         width: 6,
                         height: 6,
                         decoration: BoxDecoration(
-                          color: gradient[0],
+                          color: _isBackgroundRefresh 
+                              ? Colors.orange
+                              : _isAutoRefreshEnabled && _selectedDateRange == 0 
+                                  ? Colors.green 
+                                  : gradient[0],
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        'Live',
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 300),
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: gradient[1],
+                          color: _isBackgroundRefresh 
+                              ? Colors.orange
+                              : _isAutoRefreshEnabled && _selectedDateRange == 0 
+                                  ? Colors.green 
+                                  : gradient[1],
+                        ),
+                        child: Text(
+                          _isBackgroundRefresh 
+                              ? 'Sync'
+                              : _isAutoRefreshEnabled && _selectedDateRange == 0 
+                                  ? 'Live' 
+                                  : 'Chart',
                         ),
                       ),
                     ],
@@ -2144,10 +2485,17 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
     }
     
     // Filter data to show only the selected time range
-    return sensorService.temperatureHistory
+    final filteredData = sensorService.temperatureHistory
         .where((reading) => reading.timestamp.isAfter(startDate) && reading.timestamp.isBefore(now.add(const Duration(days: 1))))
         .toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    
+    // Apply light smoothing for better visual appearance when there are many data points
+    if (filteredData.length > 10 && _selectedDateRange > 0) {
+      return _applySmoothingToTemperatureData(filteredData);
+    }
+    
+    return filteredData;
   }
 
   List<HumidityReading> _getFilteredHumidityData(SensorService sensorService) {
@@ -2169,10 +2517,17 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
     }
     
     // Filter data to show only the selected time range
-    return sensorService.humidityHistory
+    final filteredData = sensorService.humidityHistory
         .where((reading) => reading.timestamp.isAfter(startDate) && reading.timestamp.isBefore(now.add(const Duration(days: 1))))
         .toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    
+    // Apply light smoothing for better visual appearance when there are many data points
+    if (filteredData.length > 10 && _selectedDateRange > 0) {
+      return _applySmoothingToHumidityData(filteredData);
+    }
+    
+    return filteredData;
   }
 
   List<ActivityReading> _getFilteredActivityData(SensorService sensorService) {
@@ -2209,5 +2564,65 @@ class _GraphsTrendsPageState extends State<GraphsTrendsPage> with TickerProvider
   Color _getHumidityColor(double humidity) {
     if (humidity > 70 || humidity < 30) return Colors.orange;
     return Colors.green;
+  }
+
+  // Light data smoothing for temperature readings to improve line visual appearance
+  List<TemperatureReading> _applySmoothingToTemperatureData(List<TemperatureReading> data) {
+    if (data.length < 3) return data;
+    
+    final smoothedData = <TemperatureReading>[];
+    
+    // Keep first point
+    smoothedData.add(data.first);
+    
+    // Apply simple moving average smoothing for middle points
+    for (int i = 1; i < data.length - 1; i++) {
+      final prevValue = data[i - 1].value;
+      final currentValue = data[i].value;
+      final nextValue = data[i + 1].value;
+      
+      // Simple 3-point moving average with light smoothing factor
+      final smoothedValue = (prevValue * 0.25) + (currentValue * 0.5) + (nextValue * 0.25);
+      
+      smoothedData.add(TemperatureReading(
+        timestamp: data[i].timestamp,
+        value: smoothedValue,
+      ));
+    }
+    
+    // Keep last point
+    smoothedData.add(data.last);
+    
+    return smoothedData;
+  }
+
+  // Light data smoothing for humidity readings to improve line visual appearance
+  List<HumidityReading> _applySmoothingToHumidityData(List<HumidityReading> data) {
+    if (data.length < 3) return data;
+    
+    final smoothedData = <HumidityReading>[];
+    
+    // Keep first point
+    smoothedData.add(data.first);
+    
+    // Apply simple moving average smoothing for middle points
+    for (int i = 1; i < data.length - 1; i++) {
+      final prevValue = data[i - 1].value;
+      final currentValue = data[i].value;
+      final nextValue = data[i + 1].value;
+      
+      // Simple 3-point moving average with light smoothing factor
+      final smoothedValue = (prevValue * 0.25) + (currentValue * 0.5) + (nextValue * 0.25);
+      
+      smoothedData.add(HumidityReading(
+        timestamp: data[i].timestamp,
+        value: smoothedValue,
+      ));
+    }
+    
+    // Keep last point
+    smoothedData.add(data.last);
+    
+    return smoothedData;
   }
 } 
